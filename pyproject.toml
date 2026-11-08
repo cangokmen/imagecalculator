@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "imagecalculator"
+dynamic = ["version"]
+description = "Progressive block-DCT image codec: truncate to the first k anti-diagonals, quantize per diagonal, decode at the reduced native size (Image Calculator / Frequency-Store)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Can Gokmen" }]
+keywords = ["image-compression", "dct", "vision-language-models", "tokens", "progressive-codec"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=1.24",
+    "torch>=2.1",
+    "blosc>=1.10,<2",
+    "pillow>=9.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/cangokmen/imagecalculator"
+Repository = "https://github.com/cangokmen/imagecalculator"
+Issues = "https://github.com/cangokmen/imagecalculator/issues"
+
+[project.scripts]
+imagecalculator = "imagecalculator.cli:main"
+
+[tool.hatch.version]
+path = "src/imagecalculator/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/imagecalculator"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/imagecalculator",
+    "tests",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "pyproject.toml",
+]
+exclude = ["**/__pycache__"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
