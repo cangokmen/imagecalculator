@@ -9,3 +9,5 @@ build/
 /scratch/
 .venv/
 *.whl
+CLAUDE.md
+.claude/
