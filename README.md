@@ -49,15 +49,15 @@ print("bytes over wifi:", enc.nbytes, "(original JPEG:", os.path.getsize("photo.
 ```
 
 `examples/compress_for_claude.py` runs the same question at `keep = 4, 8, 16, 32`
-and prints measured `usage.input_tokens` and bytes next to a Lanczos resize of
+and prints measured `usage.input_tokens` and bytes next to a plain resize of
 the original to the same pixel size.
 
 ### Honest framing
 
 A `k`-point inverse DCT of the low corner is a near-ideal low-pass filter
 followed by decimation. It carries the **same information as a good resize**
-(Lanczos / area) to that size, not more. What the format adds: one encoding
-serves every size, and bytes are competitive with a JPEG of the resized image.
+to that size, not more. What the format adds: one encoding serves every size,
+and bytes are competitive with a JPEG of the resized image.
 
 ## Parameters
 
