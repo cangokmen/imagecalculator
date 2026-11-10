@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (2026-11-09)
+
+Documentation only; no code changes.
+
+- README: added a Parameters section listing every argument of `compress`, `DiagonalPolicy`, `decompress` and `token_estimate`, and a CLI flag table.
+
 ## 0.1.0 (2026-11-08)
 
 Initial release.
