@@ -26,7 +26,7 @@ enc.save("photo.icf")
 
 img = ic.decompress(enc)                 # PIL image, 112 x 112, k-point inverse DCT per block
 img = ic.decompress(enc, size=224)       # any S*m/N with m >= k
-img = ic.decompress(enc, size="full")    # blurry full-size reconstruction (legacy behaviour)
+img = ic.decompress(enc, size="full")    # blurry full-size reconstruction
 ```
 
 ### Sending it to Claude
@@ -59,6 +59,66 @@ followed by decimation. It carries the **same information as a good resize**
 (Lanczos / area) to that size, not more. What the format adds: one encoding
 serves every size, and bytes are competitive with a JPEG of the resized image.
 
+## Parameters
+
+Notation: `N` = `block_size`, `S` = `image_size`, and each block has `2N - 1`
+anti-diagonals (63 with the defaults), numbered from 0 (DC) upward.
+
+### `ic.compress(image, *, ...)`
+
+`image` is a file path, a PIL image, an `(H, W, 3)` uint8 array or a
+`(3, H, W)` tensor. Everything else is keyword-only.
+
+| Parameter | Default | Values | Effect |
+|---|---|---|---|
+| `keep` | `"all"` | int in `1..2N-1`, fraction in `(0, 1]`, or `"all"` | Number of anti-diagonals stored per block. A fraction `f` keeps `ceil(f * (2N-1))`. Sets the native decode size `S * min(keep, N) / N` px, and so the token count. |
+| `quantization` | `1` | int `>= 1`, a list of `2N-1` ints, or bands `[[from, to, q], ...]` | Step per anti-diagonal; coefficients are stored as `round(coeff / q)`. Bands are half-open `[from, to)` ranges that must cover every diagonal in `[0, 2N-1)` exactly once. Larger steps mean fewer bytes and more loss. |
+| `block_size` | `32` | int dividing `image_size` | DCT block side `N`. |
+| `image_size` | `448` | positive int | The input is resized (bilinear) to `S x S` before encoding; the aspect ratio is not preserved. |
+| `use_ycrcb` | `True` | bool | Convert RGB to YCrCb before the DCT. |
+| `subsampling` | `"1x1"` | `"1x1"`, `"2x2-r"`, `"2x2-c"`, `"4x4"` | Chroma averaging: none, pairs of rows, pairs of columns, or 2x2 blocks. Anything but `"1x1"` requires `use_ycrcb=True`. |
+| `clevel` | `9` | int in `0..9` | blosc/zstd compression level. Changes bytes and encode time only, never pixels. |
+| `policy` | `None` | `ic.DiagonalPolicy` | Per-diagonal control, see below. |
+| `device` | `"cpu"` | torch device | Where the transform runs. |
+
+`keep` is the only parameter that changes the token count. The others change
+bytes (and, except `clevel`, quality).
+
+`quantization=1` stores the DCT coefficients as rounded integers. A full decode
+is then within 2 levels of the resized input (one from coefficient rounding,
+one from uint8 truncation), not bit-exact in pixel space.
+
+### `ic.DiagonalPolicy(...)`
+
+| Field | Default | Values | Effect |
+|---|---|---|---|
+| `keep` | `"all"` | as above | As above. If left at `"all"`, the `keep` argument of `compress` is used. |
+| `quantization` | `None` | int `>= 1` or a list of `2N-1` ints | Overrides the `quantization` argument of `compress`; `None` falls back to it. Bands are not accepted here. |
+| `clevel` | `None` | int in `0..9` or a list of `2N-1` ints | Compression level per diagonal; `None` falls back to the `clevel` argument. |
+| `transform` | `None` | callable `(d, coeffs) -> coeffs` | Hook on the un-quantized float `(3, n_d)` coefficients of diagonal `d`, applied before quantization. |
+
+### `ic.decompress(encoded, size="native", device="cpu")`
+
+`encoded` is an `EncodedImage`, `.icf` bytes, or a path to an `.icf` file.
+Returns a PIL image.
+
+| `size` | Output |
+|---|---|
+| `"native"` (default) | `S * m / N` px with `m = min(keep, N)`: the smallest size that holds everything kept. |
+| `"full"` | `S x S` px. |
+| int | A side length of the form `S * m / N` for an integer `m` between `min(keep, N)` and `N`. `enc.valid_sizes()` lists them; anything else raises `ValueError`. |
+
+### `enc.token_estimate(provider="anthropic", detail=None)`
+
+| Parameter | Default | Values |
+|---|---|---|
+| `provider` | `"anthropic"` | `"anthropic"`, `"openai"` or `"openai:<model>"` (default model `gpt-5.5`), `"google"` or `"google:<model>"` (default `gemini-3`) |
+| `detail` | `None` (the API default) | OpenAI `detail` (`"low"`, `"high"`, `"auto"`, and `"original"` on models that have it) or Gemini 3+ `media_resolution` (`"low"`, `"medium"`, `"high"`, `"ultra_high"`). Not accepted for Anthropic. |
+
+`enc.savings(original=None, provider="anthropic", detail=None)` takes the same
+two arguments plus the original file path (or its size in bytes) for the byte
+comparison.
+
 ## Per-diagonal control (the adaptivity knobs)
 
 ```python
@@ -81,12 +141,29 @@ imagecalculator decompress photo.icf [--size native|full|224] -o photo.png
 imagecalculator info photo.icf [--original photo.jpg]
 ```
 
+| Command | Flag | Default | Meaning |
+|---|---|---|---|
+| `compress` | `--keep` | `all` | Count (`8`), fraction (`0.25`), percent (`25%`) or `all`. |
+| | `--quantization`, `-q` | `1` | Scalar step, or JSON bands `'[[0,8,1],[8,63,20]]'`. |
+| | `--block-size` | `32` | `block_size`. |
+| | `--image-size` | `448` | `image_size`. |
+| | `--no-ycrcb` | off | Sets `use_ycrcb=False`. |
+| | `--subsampling` | `1x1` | `1x1`, `2x2-r`, `2x2-c` or `4x4`. |
+| | `--clevel` | `9` | `0..9`. |
+| | `--device` | `cpu` | torch device. |
+| | `-o`, `--output` | input name with `.icf` | Output file. |
+| `decompress` | `--size` | `native` | `native`, `full` or a side length in px. |
+| | `--device` | `cpu` | torch device. |
+| | `-o`, `--output` | input name with `.png` | Output file. |
+| `info` | `--original` | none | Original image, for the byte comparison. |
+| | `--json` | off | Also print the savings as JSON. |
+| `compress`, `info` | `--provider` | `anthropic` | `anthropic`, `openai[:model]` or `google[:model]`. |
+| | `--detail` | API default | OpenAI `detail` or Gemini `media_resolution`. |
+
 `info` prints the config, then two lines: `tokens: 17 (full image 268, ...)` and
 `bytes over the air: 6.1 KiB (original file 182 KiB, ...)`.
 
-`compress` and `info` take `--provider anthropic | openai[:model] | google[:model]`
-and `--detail` (OpenAI `detail`, Gemini `media_resolution`); the same arguments
-go to `token_estimate()` / `EncodedImage.savings()`. Truncation only saves tokens
+Truncation only saves tokens
 where cost scales with pixels: Anthropic, OpenAI patch models (gpt-5.2 and
 later, gpt-4.1-mini; default `openai` = gpt-5.5) and Gemini 2.5 and earlier. Tile-priced OpenAI
 models (gpt-4o, gpt-4.1, gpt-5.1) bill a 448 px image as one 512 px tile, and
@@ -114,14 +191,3 @@ Dependencies: numpy, torch, blosc (1.x), Pillow.
 On a shared machine with many cores, set `OMP_NUM_THREADS` (or
 `torch.set_num_threads`) to a small number: the codec's tensors are small, and
 32 contending OpenMP threads turn a 2 ms encode into seconds.
-
-`quantization=1` stores the DCT coefficients as rounded integers (the
-research "q1" stores); a full decode is within 2 levels of the input (one from
-coefficient rounding, one from uint8 truncation), not bit-exact in pixel space.
-
-## Compatibility with the research Frequency-Store
-
-With no `transform`, `enc.payloads[d]` is byte-identical to the file
-`img_<i>/diag_<d>.col` of a research dir store built with the same config, and
-`decompress(enc, size="full")` reproduces the research reader's reconstruction
-exactly.
